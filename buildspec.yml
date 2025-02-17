@@ -63,12 +63,11 @@ phases:
       - echo "Uploading results to CSPM..."
       - |
         # Upload scan results
-        RESPONSE=$(curl -s -X POST \
-          -H "Authorization: Bearer $AK_TOKEN" \
-          -F "tenant_id=$TENANT_ID" \
-          -F "label=$LABEL" \
-          -F "report=@trufflehog-results.json" \
-          $CSPM_URL/upload-endpoint)  # Replace with actual endpoint path
+        RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
+          --header "Tenant-Id: ${TENANT_ID}" \
+          --header "Authorization: Bearer ${AK_TOKEN}" \
+          --form "file=@$(pwd)/trufflehog-results.json")
+        echo "Response: $RESPONSE"
 
         # Check upload response
         if echo "$RESPONSE" | grep -q "File received successfully"; then
