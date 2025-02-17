@@ -33,40 +33,41 @@ phases:
       - chmod -R 777 app  # Ensure proper permissions for scanning
 
   build:
-    commands:
-      - echo "Preparing flags and running TruffleHog scan..."
-      - |
-        # Build branch flag
-        BRANCH_FLAG=""
-        if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
-          BRANCH_FLAG="--branch=$BRANCH"
-        fi
+  commands:
+    - echo "Preparing flags and running TruffleHog scan..."
+    - |
+      #!/bin/bash
+      # Build branch flag
+      BRANCH_FLAG=""
+      if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
+        BRANCH_FLAG="--branch=$BRANCH"
+      fi
 
-        # Build exclude paths flag
-        EXCLUDE_FLAG=""
-        if [ -n "$EXCLUDE_PATHS" ]; then
-          IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
-          for path in "${PATHS[@]}"; do
-            EXCLUDE_FLAG+=" -x /pwd/${path}"
-          done
-        fi
+      # Build exclude paths flag
+      EXCLUDE_FLAG=""
+      if [ -n "$EXCLUDE_PATHS" ]; then
+        IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
+        for path in "${PATHS[@]}"; do
+          EXCLUDE_FLAG+=" -x /pwd/${path}"
+        done
+      fi
 
-        # Build results flag
-        RESULTS_FLAG=""
-        [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
+      # Build results flag
+      RESULTS_FLAG=""
+      [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
 
-        # Build fail flag
-        FAIL_FLAG=""
-        [ "$FAIL" = "true" ] && FAIL_FLAG="--fail"
+      # Build fail flag
+      FAIL_FLAG=""
+      [ "$FAIL" = "true" ] && FAIL_FLAG="--fail"
 
-        # Run TruffleHog scan
-        docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 \
-          git file:///pwd --json --no-update \
-          $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $ARGS > trufflehog-results.json
+      # Run TruffleHog scan
+      docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 \
+        git file:///pwd --json --no-update \
+        $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $ARGS > trufflehog-results.json
 
-        # Save TruffleHog exit code
-        echo $? > trufflehog_exit_code.txt
-        echo "TruffleHog exit code: $(cat trufflehog_exit_code.txt)"
+      # Save exit code
+      echo $? > trufflehog_exit_code.txt
+      echo "TruffleHog exit code: $(cat trufflehog_exit_code.txt)"
 
   post_build:
     commands:
