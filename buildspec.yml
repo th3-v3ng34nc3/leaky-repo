@@ -1,64 +1,75 @@
 version: 0.2
+
 env:
   variables:
     # CSPM settings
-    CSPM_URL: "cspm.demo.accuknox.com"
-    TENANT_ID: "3730"
-    LABEL: "SECRETSCAN"
-    # Repository to scan and branch details
-    TARGET_REPO: "https://github.com/NikhilRawat014/leaky-repo"
-    BRANCH: "master"
+    CSPM_URL: "cspm.demo.accuknox.com"  # Replace with actual CSPM API endpoint
+    TENANT_ID: "3730"  # Replace with your tenant ID
+    LABEL: "SECRETSCAN"  # Label for the scan report
+
+    # Repository to scan
+    TARGET_REPO: "https://github.com/NikhilRawat014/leaky-repo"  # Replace with your target repository
+    BRANCH: "master"  # Branch to scan (use "all-branches" for scanning all branches)
+
     # Optional flags
-    RESULTS: ""
-    FAIL: "false"
-    EXCLUDE_PATHS: ""
-    ARGS: ""
+    RESULTS: ""  # Path to save results (optional)
+    FAIL: "false"  # Set to "true" to fail the build if secrets are found
+    EXCLUDE_PATHS: ""  # Comma-separated paths to exclude (e.g., "tests,node_modules")
+    ARGS: ""  # Additional TruffleHog arguments
+
   secrets-manager:
-    AK_TOKEN: "AccuKnoxAPIToken"
+    AK_TOKEN: "AccuKnoxAPIToken"  # API token for CSPM (stored in AWS Secrets Manager)
 
 phases:
+  install:
+    commands:
+      - echo "Installing dependencies..."
+      - apt-get update && apt-get install -y jq curl  # Install required tools
+
   pre_build:
     commands:
       - echo "Cloning repository..."
       - git clone --single-branch --branch $BRANCH $TARGET_REPO app
-      - chmod -R 777 app
+      - chmod -R 777 app  # Ensure proper permissions for scanning
 
   build:
     commands:
-    - echo "Preparing TruffleHog flags..."
-    - |
-      # Use bash explicitly
-      #!/bin/bash
-      # Build branch flag
-      BRANCH_FLAG=""
-      if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
-        BRANCH_FLAG="--branch=$BRANCH"
-      fi
+      - echo "Preparing TruffleHog flags..."
+      - |
+        #!/bin/bash
+        # Build branch flag
+        BRANCH_FLAG=""
+        if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
+          BRANCH_FLAG="--branch=$BRANCH"
+        fi
 
-      # Build exclude paths flag
-      EXCLUDE_FLAG=""
-      if [ -n "$EXCLUDE_PATHS" ]; then
-        IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
-        for path in "${PATHS[@]}"; do
-          EXCLUDE_FLAG+=" -x /pwd/${path}"
-        done
-      fi
+        # Build exclude paths flag
+        EXCLUDE_FLAG=""
+        if [ -n "$EXCLUDE_PATHS" ]; then
+          IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
+          for path in "${PATHS[@]}"; do
+            EXCLUDE_FLAG+=" -x /pwd/${path}"
+          done
+        fi
 
-      # Build results flag
-      RESULTS_FLAG=""
-      [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
+        # Build results flag
+        RESULTS_FLAG=""
+        [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
 
-      # Build fail flag
-      FAIL_FLAG=""
-      [ "$FAIL" == "true" ] && FAIL_FLAG="--fail"
-      
+        # Build fail flag
+        FAIL_FLAG=""
+        [ "$FAIL" == "true" ] && FAIL_FLAG="--fail"
+
       - echo "Running TruffleHog scan..."
       - |
+        # Run TruffleHog scan
         docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 \
           git file:///pwd --json --no-update \
           $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $ARGS > trufflehog-results.json
 
+        # Save TruffleHog exit code
         echo $? > trufflehog_exit_code.txt
+        echo "TruffleHog exit code: $(cat trufflehog_exit_code.txt)"
 
   post_build:
     commands:
@@ -70,17 +81,12 @@ phases:
           echo "Error: trufflehog-results.json not found!"
           exit 1
         fi
-
-        # Debug: Print CSPM URL and token
-        echo "CSPM_URL: $CSPM_URL"
-        echo "AK_TOKEN: ${AK_TOKEN}"
-
-        # Upload scan results
+        
+        # Upload scan results to CSPM
         RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
-            --header "Tenant-Id: ${TENANT_ID}" \
-            --header "Authorization: Bearer ${AK_TOKEN}" \
-            --form "file=@$(pwd)/trufflehog-results.json")
-          echo "Response: $RESPONSE"
+          --header "Tenant-Id: ${TENANT_ID}" \
+          --header "Authorization: Bearer ${AK_TOKEN}" \
+          --form "file=@$(pwd)/trufflehog-results.json")
 
         # Debug: Print curl response
         echo "Curl Response: $RESPONSE"
@@ -98,7 +104,7 @@ phases:
           echo "Secrets detected! Failing build..."
           exit 1
         fi
-      
+
 artifacts:
   files:
-    - trufflehog-results.json
+    - trufflehog-results.json  # Save scan results as an artifact
