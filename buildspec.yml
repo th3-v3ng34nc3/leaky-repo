@@ -48,7 +48,7 @@ phases:
         if [ -n "$EXCLUDE_PATHS" ]; then
           IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
           for path in "${PATHS[@]}"; do
-            EXCLUDE_FLAG+=" -x /pwd/${path}"
+            EXCLUDE_FLAG+=" -x /workspace/app/${path}"
           done
         fi
 
@@ -62,7 +62,7 @@ phases:
 
         # Run TruffleHog scan
         docker run --rm -v $(pwd):/workspace trufflesecurity/trufflehog:3.88.1 \
-          git file:///workspace --json --no-update \
+          git file:///workspace/app --json --no-update \
           $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $ARGS > trufflehog-results.json
 
         # Save exit code
