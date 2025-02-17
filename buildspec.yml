@@ -62,6 +62,7 @@ phases:
         echo "TruffleHog exit code: $EXIT_CODE"
 
   post_build:
+  post_build:
   commands:
     - echo "Evaluating TruffleHog scan results..."
     - |
