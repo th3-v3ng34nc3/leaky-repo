@@ -1,111 +1,89 @@
 version: 0.2
-
 env:
   variables:
     # CSPM settings
-    CSPM_URL: "cspm.demo.accuknox.com"  # Replace with actual CSPM API endpoint
-    TENANT_ID: "3730"                   # Replace with your tenant ID
-    LABEL: "SECRETSCAN"                 # Label for the scan report
-
-    # Repository to scan
-    TARGET_REPO: "https://github.com/NikhilRawat014/leaky-repo"  # Replace with your target repository
-    BRANCH: "master"                     # Branch to scan (or "all-branches")
-
-    # Optional flags
-    RESULTS: ""                          # Path to save results (optional)
-    FAIL: "false"                        # Set to "true" to fail the build if secrets are found
-    EXCLUDE_PATHS: ""                    # Comma-separated paths to exclude (e.g., "tests,node_modules")
-    ARGS: ""                             # Additional TruffleHog arguments
-
+    CSPM_URL: "cspm.demo.accuknox.com"
+    TENANT_ID: "3730"
+    LABEL: "SECRETSCAN"
+    # Repository to scan and branch details
+    TARGET_REPO: "https://github.com/NikhilRawat014/leaky-repo"
+    BRANCH: "master"
+    # Optional flags (leave empty if not needed)
+    RESULTS: ""
+    FAIL: "false"          # Set to "true" to fail the build if secrets are found
+    EXCLUDE_PATHS: ""
+    ARGS: ""
   secrets-manager:
-    AK_TOKEN: "AccuKnoxAPIToken"         # API token for CSPM (stored in AWS Secrets Manager)
+    AK_TOKEN: "AccuKnoxAPIToken"
 
 phases:
-  install:
-    commands:
-      - echo "Installing dependencies..."
-      - apt-get update && apt-get install -y jq curl  # Install required tools
-
   pre_build:
     commands:
       - echo "Cloning repository..."
       - git clone --single-branch --branch $BRANCH $TARGET_REPO app
-      - chmod -R 777 app  # Ensure proper permissions for scanning
+      - chmod -R 777 app
 
   build:
     commands:
-      - echo "Preparing flags and running TruffleHog scan..."
+      - echo "Preparing TruffleHog flags..."
       - |
-        #!/bin/bash
-        # Build branch flag
         BRANCH_FLAG=""
-        if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
-          BRANCH_FLAG="--branch=$BRANCH"
+        if [ -n "$BRANCH" ]; then
+          if [ "$BRANCH" != "all-branches" ]; then
+            BRANCH_FLAG="--branch=$BRANCH"
+          fi
         fi
-
-        # Build exclude paths flag
+      - |
+        RESULTS_FLAG=""
+        if [ -n "$RESULTS" ]; then
+          RESULTS_FLAG="--results $RESULTS"
+        fi
+      - |
+        FAIL_FLAG=""
+        if [ "$FAIL" == "true" ]; then
+          FAIL_FLAG="--fail"
+        fi
+      - |
         EXCLUDE_FLAG=""
         if [ -n "$EXCLUDE_PATHS" ]; then
-          IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
-          for path in "${PATHS[@]}"; do
-            EXCLUDE_FLAG+=" -x /workspace/app/${path}"
-          done
+          EXCLUDE_FLAG="-x /pwd/$EXCLUDE_PATHS"
         fi
-
-        # Build results flag
-        RESULTS_FLAG=""
-        [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
-
-        # Build fail flag
-        FAIL_FLAG=""
-        [ "$FAIL" = "true" ] && FAIL_FLAG="--fail"
-
-        # Run TruffleHog scan
-        docker run --rm -v $(pwd):/workspace trufflesecurity/trufflehog:3.88.1 \
-          git file:///workspace/app --json --no-update \
-          $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $ARGS > trufflehog-results.json
-
-        # Save exit code
-        echo $? > trufflehog_exit_code.txt
-        echo "TruffleHog exit code: $(cat trufflehog_exit_code.txt)"
+      - |
+        EXTRA_ARGS=""
+        if [ -n "$ARGS" ]; then
+          EXTRA_ARGS="$ARGS"
+        fi
+      - echo "Running TruffleHog scan..."
+      - |
+        # Run the secrets scan with all constructed flags.
+        docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 git file:///pwd --json --no-update $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $EXTRA_ARGS > trufflehog-results.json
+        EXIT_CODE=$?
+        echo $EXIT_CODE > trufflehog_exit_code.txt
+        echo "TruffleHog exit code: $EXIT_CODE"
 
   post_build:
     commands:
-      - echo "Uploading results to CSPM..."
+      - echo "Evaluating TruffleHog scan results..."
       - |
-        # Verify results file exists
-        if [ ! -f trufflehog-results.json ]; then
-          echo "Error: trufflehog-results.json not found!"
+        EXIT_CODE=$(cat trufflehog_exit_code.txt)
+        if [ "$EXIT_CODE" == "183" ]; then
+          echo "TruffleHog detected secrets. Failing the job."
           exit 1
         fi
-
-        # Debug: Print CSPM URL and token
-        echo "CSPM_URL: $CSPM_URL"
-        echo "AK_TOKEN: ${AK_TOKEN}"
-
-        # Upload scan results to CSPM
+      - echo "Checking if any secrets were found..."
+      - if [ ! -s trufflehog-results.json ]; then echo "No secrets found. Skipping API upload."; exit 0; fi
+      - echo "Uploading report to CSPM panel..."
+      - |
         RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
           --header "Tenant-Id: ${TENANT_ID}" \
           --header "Authorization: Bearer ${AK_TOKEN}" \
           --form "file=@$(pwd)/trufflehog-results.json")
-
-        # Debug: Print curl response
-        echo "Curl Response: $RESPONSE"
-
-        # Check upload response
-        if echo "$RESPONSE" | grep -q "File received successfully"; then
-          echo "Report uploaded successfully"
-        else
-          echo "Error uploading report: $RESPONSE"
-          exit 1
-        fi
-
-        # If FAIL is enabled, check the TruffleHog exit code
-        if [ "$FAIL" = "true" ] && [ $(cat trufflehog_exit_code.txt) -ne 0 ]; then
-          echo "Secrets detected! Failing build..."
+        echo "Response: $RESPONSE"
+        if [[ "$RESPONSE" != *"File received successfully"* ]]; then
+          echo "Error: Failed to upload report to CSPM panel"
           exit 1
         fi
 
 artifacts:
   files:
-    - trufflehog-results.json  # Save scan results as an artifact
+    - trufflehog-results.json
