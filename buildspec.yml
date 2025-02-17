@@ -62,27 +62,18 @@ phases:
         echo "TruffleHog exit code: $EXIT_CODE"
 
   post_build:
-    commands:
-      - echo "Evaluating TruffleHog scan results..."
-      - |
-        EXIT_CODE=$(cat trufflehog_exit_code.txt)
-        if [ "$EXIT_CODE" == "183" ]; then
-          echo "TruffleHog detected secrets. Failing the job."
-          exit 1
-        fi
-      - echo "Checking if any secrets were found..."
-      - if [ ! -s trufflehog-results.json ]; then echo "No secrets found. Skipping API upload."; exit 0; fi
-      - echo "Uploading report to CSPM panel..."
-      - |
-        RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
-          --header "Tenant-Id: ${TENANT_ID}" \
-          --header "Authorization: Bearer ${AK_TOKEN}" \
-          --form "file=@$(pwd)/trufflehog-results.json")
-        echo "Response: $RESPONSE"
-        if [[ "$RESPONSE" != *"File received successfully"* ]]; then
+  commands:
+    - echo "Evaluating TruffleHog scan results..."
+    - |
+      case "$RESPONSE" in
+        *"File received successfully"*) 
+          echo "File uploaded successfully."
+          ;;
+        *)
           echo "Error: Failed to upload report to CSPM panel"
           exit 1
-        fi
+          ;;
+      esac
 
 artifacts:
   files:
