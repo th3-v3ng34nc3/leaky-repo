@@ -36,7 +36,8 @@ phases:
     commands:
       - echo "Preparing TruffleHog flags..."
       - |
-        #!/bin/bash
+        # Use bash explicitly
+        bash << 'EOF'
         # Build branch flag
         BRANCH_FLAG=""
         if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
@@ -59,6 +60,7 @@ phases:
         # Build fail flag
         FAIL_FLAG=""
         [ "$FAIL" == "true" ] && FAIL_FLAG="--fail"
+        EOF
 
       - echo "Running TruffleHog scan..."
       - |
@@ -75,13 +77,18 @@ phases:
     commands:
       - echo "Uploading results to CSPM..."
       - |
-        #!/bin/bash
+        # Use bash explicitly
+        bash << 'EOF'
         # Check if results file exists
         if [ ! -f trufflehog-results.json ]; then
           echo "Error: trufflehog-results.json not found!"
           exit 1
         fi
-        
+
+        # Debug: Print CSPM URL and token
+        echo "CSPM_URL: $CSPM_URL"
+        echo "AK_TOKEN: ${AK_TOKEN}"
+
         # Upload scan results to CSPM
         RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
           --header "Tenant-Id: ${TENANT_ID}" \
@@ -104,6 +111,7 @@ phases:
           echo "Secrets detected! Failing build..."
           exit 1
         fi
+        EOF
 
 artifacts:
   files:
