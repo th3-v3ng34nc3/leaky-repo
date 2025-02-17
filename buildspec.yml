@@ -8,9 +8,9 @@ env:
     # Repository to scan and branch details
     TARGET_REPO: "https://github.com/NikhilRawat014/leaky-repo"
     BRANCH: "master"
-    # Optional flags (leave empty if not needed)
+    # Optional flags
     RESULTS: ""
-    FAIL: "false"          # Set to "true" to fail the build if secrets are found
+    FAIL: "false"
     EXCLUDE_PATHS: ""
     ARGS: ""
   secrets-manager:
@@ -27,54 +27,62 @@ phases:
     commands:
       - echo "Preparing TruffleHog flags..."
       - |
+        # Build branch flag
         BRANCH_FLAG=""
-        if [ -n "$BRANCH" ]; then
-          if [ "$BRANCH" != "all-branches" ]; then
-            BRANCH_FLAG="--branch=$BRANCH"
-          fi
+        if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
+          BRANCH_FLAG="--branch=$BRANCH"
         fi
-      - |
-        RESULTS_FLAG=""
-        if [ -n "$RESULTS" ]; then
-          RESULTS_FLAG="--results $RESULTS"
-        fi
-      - |
-        FAIL_FLAG=""
-        if [ "$FAIL" == "true" ]; then
-          FAIL_FLAG="--fail"
-        fi
-      - |
+
+        # Build exclude paths flag
         EXCLUDE_FLAG=""
         if [ -n "$EXCLUDE_PATHS" ]; then
-          EXCLUDE_FLAG="-x /pwd/$EXCLUDE_PATHS"
+          IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
+          for path in "${PATHS[@]}"; do
+            EXCLUDE_FLAG+=" -x /pwd/${path}"
+          done
         fi
-      - |
-        EXTRA_ARGS=""
-        if [ -n "$ARGS" ]; then
-          EXTRA_ARGS="$ARGS"
-        fi
+
+        # Build results flag
+        RESULTS_FLAG=""
+        [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
+
+        # Build fail flag
+        FAIL_FLAG=""
+        [ "$FAIL" == "true" ] && FAIL_FLAG="--fail"
+
       - echo "Running TruffleHog scan..."
       - |
-        # Run the secrets scan with all constructed flags.
-        docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 git file:///pwd --json --no-update $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $EXTRA_ARGS > trufflehog-results.json
-        EXIT_CODE=$?
-        echo $EXIT_CODE > trufflehog_exit_code.txt
-        echo "TruffleHog exit code: $EXIT_CODE"
+        docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 \
+          git file:///pwd --json --no-update \
+          $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $ARGS > trufflehog-results.json
+
+        echo $? > trufflehog_exit_code.txt
 
   post_build:
-  post_build:
-  commands:
-    - echo "Evaluating TruffleHog scan results..."
-    - |
-      case "$RESPONSE" in
-        *"File received successfully"*) 
-          echo "File uploaded successfully."
-          ;;
-        *)
-          echo "Error: Failed to upload report to CSPM panel"
+    commands:
+      - echo "Uploading results to CSPM..."
+      - |
+        # Upload scan results
+        RESPONSE=$(curl -s -X POST \
+          -H "Authorization: Bearer $AK_TOKEN" \
+          -F "tenant_id=$TENANT_ID" \
+          -F "label=$LABEL" \
+          -F "report=@trufflehog-results.json" \
+          $CSPM_URL/upload-endpoint)  # Replace with actual endpoint path
+
+        # Check upload response
+        if echo "$RESPONSE" | grep -q "File received successfully"; then
+          echo "Report uploaded successfully"
+        else
+          echo "Error uploading report: $RESPONSE"
           exit 1
-          ;;
-      esac
+        fi
+
+        # Check TruffleHog exit code if FAIL is enabled
+        if [ "$FAIL" == "true" ] && [ $(cat trufflehog_exit_code.txt) -ne 0 ]; then
+          echo "Secrets detected! Failing build..."
+          exit 1
+        fi
 
 artifacts:
   files:
