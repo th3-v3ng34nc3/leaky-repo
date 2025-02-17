@@ -14,7 +14,7 @@ env:
     EXCLUDE_PATHS: ""
     ARGS: ""
   secrets-manager:
-    AK_TOKEN: "AK_TOKEN"
+    AK_TOKEN: "AccuKnoxAPIToken"
 
 phases:
   pre_build:
