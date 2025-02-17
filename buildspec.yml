@@ -4,21 +4,21 @@ env:
   variables:
     # CSPM settings
     CSPM_URL: "cspm.demo.accuknox.com"  # Replace with actual CSPM API endpoint
-    TENANT_ID: "3730"  # Replace with your tenant ID
-    LABEL: "SECRETSCAN"  # Label for the scan report
+    TENANT_ID: "3730"                   # Replace with your tenant ID
+    LABEL: "SECRETSCAN"                 # Label for the scan report
 
     # Repository to scan
     TARGET_REPO: "https://github.com/NikhilRawat014/leaky-repo"  # Replace with your target repository
-    BRANCH: "master"  # Branch to scan (use "all-branches" for scanning all branches)
+    BRANCH: "master"                     # Branch to scan (or "all-branches")
 
     # Optional flags
-    RESULTS: ""  # Path to save results (optional)
-    FAIL: "false"  # Set to "true" to fail the build if secrets are found
-    EXCLUDE_PATHS: ""  # Comma-separated paths to exclude (e.g., "tests,node_modules")
-    ARGS: ""  # Additional TruffleHog arguments
+    RESULTS: ""                          # Path to save results (optional)
+    FAIL: "false"                        # Set to "true" to fail the build if secrets are found
+    EXCLUDE_PATHS: ""                    # Comma-separated paths to exclude (e.g., "tests,node_modules")
+    ARGS: ""                             # Additional TruffleHog arguments
 
   secrets-manager:
-    AK_TOKEN: "AccuKnoxAPIToken"  # API token for CSPM (stored in AWS Secrets Manager)
+    AK_TOKEN: "AccuKnoxAPIToken"         # API token for CSPM (stored in AWS Secrets Manager)
 
 phases:
   install:
@@ -34,10 +34,8 @@ phases:
 
   build:
     commands:
-      - echo "Preparing TruffleHog flags..."
+      - echo "Preparing flags and running TruffleHog scan..."
       - |
-        # Use bash explicitly
-        bash << 'EOF'
         # Build branch flag
         BRANCH_FLAG=""
         if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
@@ -59,11 +57,8 @@ phases:
 
         # Build fail flag
         FAIL_FLAG=""
-        [ "$FAIL" == "true" ] && FAIL_FLAG="--fail"
-        EOF
+        [ "$FAIL" = "true" ] && FAIL_FLAG="--fail"
 
-      - echo "Running TruffleHog scan..."
-      - |
         # Run TruffleHog scan
         docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 \
           git file:///pwd --json --no-update \
@@ -77,9 +72,7 @@ phases:
     commands:
       - echo "Uploading results to CSPM..."
       - |
-        # Use bash explicitly
-        bash << 'EOF'
-        # Check if results file exists
+        # Verify results file exists
         if [ ! -f trufflehog-results.json ]; then
           echo "Error: trufflehog-results.json not found!"
           exit 1
@@ -106,12 +99,11 @@ phases:
           exit 1
         fi
 
-        # Check TruffleHog exit code if FAIL is enabled
-        if [ "$FAIL" == "true" ] && [ $(cat trufflehog_exit_code.txt) -ne 0 ]; then
+        # If FAIL is enabled, check the TruffleHog exit code
+        if [ "$FAIL" = "true" ] && [ $(cat trufflehog_exit_code.txt) -ne 0 ]; then
           echo "Secrets detected! Failing build..."
           exit 1
         fi
-        EOF
 
 artifacts:
   files:
