@@ -24,7 +24,7 @@ phases:
       - chmod -R 777 app
 
   build:
-  commands:
+    commands:
     - echo "Preparing TruffleHog flags..."
     - |
       # Use bash explicitly
