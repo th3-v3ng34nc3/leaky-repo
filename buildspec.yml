@@ -24,32 +24,34 @@ phases:
       - chmod -R 777 app
 
   build:
-    commands:
-      - echo "Preparing TruffleHog flags..."
-      - |
-        # Build branch flag
-        BRANCH_FLAG=""
-        if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
-          BRANCH_FLAG="--branch=$BRANCH"
-        fi
+  commands:
+    - echo "Preparing TruffleHog flags..."
+    - |
+      # Use bash explicitly
+      #!/bin/bash
+      # Build branch flag
+      BRANCH_FLAG=""
+      if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
+        BRANCH_FLAG="--branch=$BRANCH"
+      fi
 
-        # Build exclude paths flag
-        EXCLUDE_FLAG=""
-        if [ -n "$EXCLUDE_PATHS" ]; then
-          IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
-          for path in "${PATHS[@]}"; do
-            EXCLUDE_FLAG+=" -x /pwd/${path}"
-          done
-        fi
+      # Build exclude paths flag
+      EXCLUDE_FLAG=""
+      if [ -n "$EXCLUDE_PATHS" ]; then
+        IFS=',' read -ra PATHS <<< "$EXCLUDE_PATHS"
+        for path in "${PATHS[@]}"; do
+          EXCLUDE_FLAG+=" -x /pwd/${path}"
+        done
+      fi
 
-        # Build results flag
-        RESULTS_FLAG=""
-        [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
+      # Build results flag
+      RESULTS_FLAG=""
+      [ -n "$RESULTS" ] && RESULTS_FLAG="--results $RESULTS"
 
-        # Build fail flag
-        FAIL_FLAG=""
-        [ "$FAIL" == "true" ] && FAIL_FLAG="--fail"
-
+      # Build fail flag
+      FAIL_FLAG=""
+      [ "$FAIL" == "true" ] && FAIL_FLAG="--fail"
+      
       - echo "Running TruffleHog scan..."
       - |
         docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 \
@@ -59,30 +61,44 @@ phases:
         echo $? > trufflehog_exit_code.txt
 
   post_build:
-    commands:
-      - echo "Uploading results to CSPM..."
-      - |
-        # Upload scan results
-        RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
+  commands:
+    - echo "Uploading results to CSPM..."
+    - |
+      #!/bin/bash
+      # Check if results file exists
+      if [ ! -f trufflehog-results.json ]; then
+        echo "Error: trufflehog-results.json not found!"
+        exit 1
+      fi
+
+      # Debug: Print CSPM URL and token
+      echo "CSPM_URL: $CSPM_URL"
+      echo "AK_TOKEN: ${AK_TOKEN}"
+
+      # Upload scan results
+      RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
           --header "Tenant-Id: ${TENANT_ID}" \
           --header "Authorization: Bearer ${AK_TOKEN}" \
           --form "file=@$(pwd)/trufflehog-results.json")
         echo "Response: $RESPONSE"
 
-        # Check upload response
-        if echo "$RESPONSE" | grep -q "File received successfully"; then
-          echo "Report uploaded successfully"
-        else
-          echo "Error uploading report: $RESPONSE"
-          exit 1
-        fi
+      # Debug: Print curl response
+      echo "Curl Response: $RESPONSE"
 
-        # Check TruffleHog exit code if FAIL is enabled
-        if [ "$FAIL" == "true" ] && [ $(cat trufflehog_exit_code.txt) -ne 0 ]; then
-          echo "Secrets detected! Failing build..."
-          exit 1
-        fi
+      # Check upload response
+      if echo "$RESPONSE" | grep -q "File received successfully"; then
+        echo "Report uploaded successfully"
+      else
+        echo "Error uploading report: $RESPONSE"
+        exit 1
+      fi
 
+      # Check TruffleHog exit code if FAIL is enabled
+      if [ "$FAIL" == "true" ] && [ $(cat trufflehog_exit_code.txt) -ne 0 ]; then
+        echo "Secrets detected! Failing build..."
+        exit 1
+      fi
+      
 artifacts:
   files:
     - trufflehog-results.json
