@@ -61,8 +61,8 @@ phases:
         [ "$FAIL" = "true" ] && FAIL_FLAG="--fail"
 
         # Run TruffleHog scan
-        docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 \
-          git file:///pwd --json --no-update \
+        docker run --rm -v $(pwd):/workspace trufflesecurity/trufflehog:3.88.1 \
+          git file:///workspace --json --no-update \
           $BRANCH_FLAG $RESULTS_FLAG $FAIL_FLAG $EXCLUDE_FLAG $ARGS > trufflehog-results.json
 
         # Save exit code
