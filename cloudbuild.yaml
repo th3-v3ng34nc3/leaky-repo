@@ -15,7 +15,7 @@ steps:
       - |
         echo "Running TruffleHog scan..."
         docker run --rm -v "$(pwd)/app:/pwd" trufflesecurity/trufflehog:3.88.1 git file:///pwd --json --no-update --branch="$_BRANCH" > trufflehog-results.json
-        echo $? > trufflehog_exit_code.txt
+        echo $? > trufflehog_exit_code.txt  # Save exit code to a file
 
   - name: 'gcr.io/cloud-builders/curl'
     entrypoint: 'bash'
@@ -23,9 +23,9 @@ steps:
       - '-c'
       - |
         echo "Evaluating TruffleHog scan results..."
-        EXIT_CODE=$(cat trufflehog_exit_code.txt)
+        EXIT_CODE=$(cat trufflehog_exit_code.txt)  # Read exit code
 
-        if [ "$EXIT_CODE" == "183" ]; then
+        if [[ "$EXIT_CODE" == "183" ]]; then
           echo "TruffleHog detected secrets. Failing the job."
           exit 1
         fi
@@ -40,6 +40,7 @@ steps:
           --header "Tenant-Id: ${_TENANT_ID}" \
           --header "Authorization: Bearer ${_AK_TOKEN}" \
           --form "file=@$(pwd)/trufflehog-results.json")
+
         echo "Response: $RESPONSE"
 
         if [[ "$RESPONSE" != *"File received successfully"* ]]; then
