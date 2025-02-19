@@ -14,9 +14,10 @@ steps:
       - '-c'
       - |
         echo "Preparing TruffleHog scan..."
-        BRANCH_FLAG=""
         if [ -n "$_BRANCH" ] && [ "$_BRANCH" != "all-branches" ]; then
           BRANCH_FLAG="--branch=$_BRANCH"
+        else
+          BRANCH_FLAG=""
         fi
 
         echo "Running TruffleHog scan..."
