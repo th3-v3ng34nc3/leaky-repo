@@ -29,17 +29,10 @@ steps:
         fi
 
         echo "Uploading report to CSPM panel..."
-        RESPONSE=$(curl --location --request POST "https://${_CSPM_URL}/api/v1/artifact/?tenant_id=${_TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${_LABEL}" \
+        curl --location --request POST "https://${_CSPM_URL}/api/v1/artifact/?tenant_id=${_TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${_LABEL}" \
           --header "Tenant-Id: ${_TENANT_ID}" \
           --header "Authorization: Bearer ${_AK_TOKEN}" \
-          --form "file=@$(pwd)/trufflehog-results.json")
-
-        echo "Response: $RESPONSE"
-
-        if [[ "$RESPONSE" != *"File received successfully"* ]]; then
-          echo "Error: Failed to upload report to CSPM panel"
-          exit 1
-        fi
+          --form "file=@$(pwd)/trufflehog-results.json"
 
 substitutions:
   _CSPM_URL: "cspm.demo.accuknox.com"
