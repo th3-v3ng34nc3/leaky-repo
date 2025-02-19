@@ -79,7 +79,7 @@ phases:
           --header "Authorization: Bearer ${AK_TOKEN}" \
           --form "file=@$(pwd)/trufflehog-results.json")
         echo "Response: $RESPONSE"
-        if [[ "$RESPONSE" != *"File received successfully"* ]]; then
+        if ["$RESPONSE" != *"File received successfully"*]; then
           echo "Error: Failed to upload report to CSPM panel"
           exit 1
         fi
