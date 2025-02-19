@@ -66,3 +66,5 @@ artifacts:
     location: 'gs://secret-scan-se/'
     paths:
       - 'trufflehog-results.json'
+options:
+  logging: CLOUD_LOGGING_ONLY 
