@@ -1,0 +1,68 @@
+steps:
+  - name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Cloning repository..."
+        git clone --single-branch --branch $BRANCH $TARGET_REPO app
+        chmod -R 755 app  # Secure permissions: Read/execute for all, write only for owner
+
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Preparing TruffleHog scan..."
+        BRANCH_FLAG=""
+        if [ -n "$BRANCH" ] && [ "$BRANCH" != "all-branches" ]; then
+          BRANCH_FLAG="--branch=$BRANCH"
+        fi
+
+        echo "Running TruffleHog scan..."
+        docker run --rm -v $(pwd)/app:/pwd trufflesecurity/trufflehog:3.88.1 git file:///pwd --json --no-update $BRANCH_FLAG > trufflehog-results.json
+        echo $? > trufflehog_exit_code.txt
+
+  - name: 'gcr.io/cloud-builders/curl'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Evaluating TruffleHog scan results..."
+        EXIT_CODE=$(cat trufflehog_exit_code.txt)
+
+        if [ "$EXIT_CODE" == "183" ]; then
+          echo "TruffleHog detected secrets. Failing the job."
+          exit 1
+        fi
+
+        if [ ! -s trufflehog-results.json ]; then
+          echo "No secrets found. Skipping API upload."
+          exit 0
+        fi
+
+        echo "Uploading report to CSPM panel..."
+        RESPONSE=$(curl --location --request POST "https://${CSPM_URL}/api/v1/artifact/?tenant_id=${TENANT_ID}&data_type=TruffleHog&save_to_s3=true&label_id=${LABEL}" \
+          --header "Tenant-Id: ${TENANT_ID}" \
+          --header "Authorization: Bearer ${AK_TOKEN}" \
+          --form "file=@$(pwd)/trufflehog-results.json")
+        echo "Response: $RESPONSE"
+
+        if [[ "$RESPONSE" != *"File received successfully"* ]]; then
+          echo "Error: Failed to upload report to CSPM panel"
+          exit 1
+        fi
+
+substitutions:
+  _CSPM_URL: "cspm.demo.accuknox.com"
+  _TENANT_ID: "3730"
+  _LABEL: "GCPSECRETSCAN"
+  _TARGET_REPO: "https://github.com/th3-v3ng34nc3/leaky-repo"
+  _BRANCH: "master"
+  _AK_TOKEN: "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzQyNTM5NjMwLCJqdGkiOiIwNDYyNDY0MmM2ZmY0Y2E5YjJhOTI1MjkyOGM0ZDE5YiIsImlzcyI6ImNzcG0uZGVtby5hY2N1a25veC5jb20ifQ.duIP2s6Muc1Y208T93zsqLkwg4k_hXlu793eC15_c_YIUywYox-WQIXFhHyYovu_dz0ydkGBYiGWe-iPlwXzznAE5ThznE24Pvy4srmDgy8VzRnofR5xgFQUMkodRGl1wuS62ZHI5Ojk0UZK31Jbj1HThe0oHGwqp5xZM0UvtBYwBIOFNxFvllc19duwHru26cldbRF2rCCuCc7feXKtJotQEGs5VHYLIV0WKnLVkyJWlRkvtwcD6NE68sOit8HZQj1tcunR7k4y42xBCM9faoXZLu1rd1xGi8SU-rdqtoU4-Iw6HPqsqRAXJqcydGO3t8QGygLSYcLXHUCaIwsP_g"
+
+artifacts:
+  objects:
+    location: 'gs://secret-scan-se/'
+    paths:
+      - 'trufflehog-results.json'
