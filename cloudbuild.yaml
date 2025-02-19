@@ -14,12 +14,7 @@ steps:
       - '-c'
       - |
         echo "Running TruffleHog scan..."
-        BRANCH_FLAG=""
-        if [ -n "$_BRANCH" ] && [ "$_BRANCH" != "all-branches" ]; then
-          BRANCH_FLAG="--branch=$_BRANCH"
-        fi
-
-        docker run --rm -v "$(pwd)/app:/pwd" trufflesecurity/trufflehog:3.88.1 git file:///pwd --json --no-update $BRANCH_FLAG > trufflehog-results.json
+        docker run --rm -v "$(pwd)/app:/pwd" trufflesecurity/trufflehog:3.88.1 git file:///pwd --json --no-update --branch="$_BRANCH" > trufflehog-results.json
         echo $? > trufflehog_exit_code.txt
 
   - name: 'gcr.io/cloud-builders/curl'
