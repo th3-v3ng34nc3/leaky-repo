@@ -5,7 +5,7 @@ steps:
       - '-c'
       - |
         echo "Cloning repository..."
-        git clone --single-branch --branch master $TARGET_REPO app
+        git clone --single-branch --branch master $_TARGET_REPO app
         chmod -R 755 app  # Secure permissions: Read/execute for all, write only for owner
 
   - name: 'gcr.io/cloud-builders/docker'
